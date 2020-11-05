@@ -9,7 +9,20 @@ class BoxHead(torch.nn.Module):
         self.P=P
         # TODO initialize BoxHead
 
+        self.intermediate = nn.Sequential(
+            nn.Linear(256*(self.P ** 2),1024),
+            nn.Linear(1024,1024),
+            nn.ReLU()
+        )
+        self.classfier_head = nn.Sequential(
+            nn.Linear(1024,self.C+1),
+            nn.Softmax()
+        )
 
+
+        self.regressor_head = nn.Sequential(
+            nn.Linear(1024, 4*self.C)
+        )
 
     #  This function assigns to each proposal either a ground truth box or the background class (we assume background class is 0)
     #  Input:
@@ -88,7 +101,9 @@ class BoxHead(torch.nn.Module):
     #                                               CrossEntropyLoss you should not pass the output through softmax here)
     #        box_pred:     (total_proposals,4*C)
     def forward(self, feature_vectors):
-
+        feature_vectors = self.intermediate(feature_vectors)
+        class_logits = self.classfier_head(feature_vectors)
+        box_pred = self.regressor_head(feature_vectors)
         return class_logits, box_pred
 
 if __name__ == '__main__':
