@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 from utils import *
+import torchvision.ops as ops
 
 class BoxHead(torch.nn.Module):
     def __init__(self,Classes=3,P=7):
@@ -33,7 +34,22 @@ class BoxHead(torch.nn.Module):
     #       labels: (total_proposals,1) (the class that the proposal is assigned)
     #       regressor_target: (total_proposals,4) (target encoded in the [t_x,t_y,t_w,t_h] format)
     def create_ground_truth(self,proposals,gt_labels,bbox):
+        total_proposals = 0
+        for i in range(len(gt_labels)):
+            total_proposals += len(proposals[i])
+            labels_tmp = torch.zeros(len(proposals[i]),1)
+            regressor_target_tmp = torch.zeros(len(proposals[i]),4)
+            for j in range(len(proposals[i])):
+                proposal = proposals[j]
+                iou = IOU(bbox,proposal)
+                iou_idx = (iou > 0.5).nonzero()
+                #if has iou > 0.5 with more than one gt box
+                if len(iou_idx) > 1 :
+                    iou_idx = (iou > 0.99* iou.max()).nonzero()
+                labels_tmp[j] = gt_labels[i][iou_idx]
+                regressor_target_tmp[j] = bbox[i][iou_idx]
 
+        pass
         return labels,regressor_target
 
 
@@ -51,9 +67,30 @@ class BoxHead(torch.nn.Module):
         # Here you can use torchvision.ops.RoIAlign check the docs
         #####################################
 
+        #using for loop first, try vectorizing to speed up
+        feature_vectors = []
+        scale_list = [[] for i in range(len(fpn_feat_list))] #len(FPN), each sublist contains all proposasls in that scale
+        for proposal in proposals:
+            x1,y1,x2,y2 = proposal
+            p_width = np.abs(x1-x2)
+            p_height =np.abs(y1-y2)
+            fpn_idx = 4+np.log2(np.sqrt(p_width*p_height)/224) #has a range from 2 to 5
+            fpn_idx -= 2
+            for i in range(len(fpn_feat_list)):
+                scale_list[i].append(proposal[fpn_idx == i])
+
+        for i in range(len(fpn_feat_list)):
+            featmap = fpn_feat_list[i]
+            #convert proposal box from img coord to featuremap coord
+            proposals_fp = scale_list[i] *  featmap.shape[-1] / 1088 #list:len(bz){per_image_proposals,4}
+            aligned_featmap = ops.roi_align(featmap,boxes=proposals_fp,output_size=P) #shape: (total_proposals,256,P,P)
+            feature_vectors = torch.flatten(aligned_featmap, -2, -1)  # shape: (total_proposals,256,P^2)
+
+        total_proposals = 0
+        total_proposals = [total_proposals + p.shape[0] for p in proposals]
+        assert aligned_featmap.shape[0] == total_proposals
+
         return feature_vectors
-
-
 
     # This function does the post processing for the results of the Box Head for a batch of images
     # Use the proposals to distinguish the outputs from each image
