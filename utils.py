@@ -21,17 +21,15 @@ def IOU(boxA, boxB):
     if len(boxA.size()) == 3:
         center_xs, center_ys, ws, hs = boxA[:, :, 0], boxA[:, :, 1], boxA[:, :, 2], boxA[:, :, 3]
     else:
-        center_xs, center_ys, ws, hs = boxA[:, 0], boxA[:, 1], boxA[:, 2], boxA[:, 3]
+        lefts, uppers, rights, bottoms = boxA.T
 
-    target_left, target_upper, target_right, target_bottom = boxB
+    ws = abs(rights-lefts)
+    hs = abs(uppers-bottoms)
+    target_left, target_upper, target_right, target_bottom = boxB.T
 
     areas1 = ws * hs  # torch.size(grid_size[0], grid_size[1])
     area2 = abs(target_right - target_left) * abs(target_upper - target_bottom)  # float
 
-    lefts = center_xs - ws / 2
-    rights = center_xs + ws / 2
-    uppers = center_ys - hs / 2
-    bottoms = center_ys + hs / 2
 
     # max(a,b)
     x_overlap = (torch.min(rights, target_right) - torch.max(lefts, target_left)).clamp(min=0)
@@ -43,6 +41,47 @@ def IOU(boxA, boxB):
 
     return iou
 
+# iou function copied from yolo implementation, calculate iou between two groups of boxes
+#input shape: {(per_image_proposals,4)} ([x1,y1,x2,y2] format)
+#             {(n_obj, 4)}
+def iou_entire(proposal, bbox):
+    # if torch.is_tensor(net_out):
+    #     net_out = net_out.cpu().detach()
+    # if torch.is_tensor(target):
+    #     target = target.cpu().detach()
+
+    p_x1, p_y1, p_x2, p_y2 = proposal.T
+    g_x1, g_y1, g_x2, g_y2 = bbox.T
+
+    p_x1_mesh, g_x1_mesh = np.meshgrid(p_x1,g_x1)
+    p_x2_mesh, g_x2_mesh = np.meshgrid(p_x2, g_x2)
+    p_y1_mesh, g_y1_mesh = np.meshgrid(p_y1, g_y1)
+    p_y2_mesh, g_y2_mesh = np.meshgrid(p_y2, g_y2)
+
+    p_w = p_x2_mesh - p_x1_mesh
+    p_h = p_y1_mesh - p_y2_mesh
+    g_w = g_x2_mesh - g_x1_mesh
+    g_h = g_y1_mesh - g_y2_mesh
+
+
+
+    overlap_w = np.minimum(p_x2_mesh, g_x2_mesh) - np.maximum(p_x1_mesh, g_x1_mesh)
+    overlap_h = np.minimum(p_y2_mesh, g_y2_mesh) - np.maximum(p_y1_mesh, g_y1_mesh)
+
+    a_overlap = overlap_w * overlap_h
+    # edgecase no prediction box or no overlapping
+
+    a_overlap[np.where(overlap_w <= 0)] = 0
+    a_overlap[np.where(overlap_h <= 0)] = 0
+
+    # pdb.set_trace()
+    a_union = (p_w) * (p_h) + (g_w) * (g_h) - a_overlap
+    # print('area of union',a_union)
+    # print('area of overlap', a_overlap)
+    iou = a_overlap / a_union
+    # pdb.set_trace()
+    # print('iou',iou.shape)
+    return iou
 
 # This function decodes the output of the box head that are given in the [t_x,t_y,t_w,t_h] format
 # into box coordinates where it return the upper left and lower right corner of the bbox
@@ -51,6 +90,7 @@ def IOU(boxA, boxB):
 #       flatten_proposals: (total_proposals,4) ([x1,y1,x2,y2] format)
 # Output:
 #       box: (total_proposals,4) ([x1,y1,x2,y2] format)
+
 def output_decodingd(regressed_boxes_t,flatten_proposals, device='cpu'):
     
     return box
