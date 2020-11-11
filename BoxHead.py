@@ -5,10 +5,11 @@ from utils import *
 import torchvision.ops as ops
 
 class BoxHead(torch.nn.Module):
-    def __init__(self,Classes=3,P=7):
+    def __init__(self,device='cuda',Classes=3,P=7):
         #added
         super(BoxHead,self).__init__()
 
+        self.device = device
         self.C=Classes
         self.P=P
         # TODO initialize BoxHead
@@ -180,11 +181,50 @@ class BoxHead(torch.nn.Module):
     #       boxes: list:len(bz){(post_NMS_boxes_per_image,4)}  ([x1,y1,x2,y2] format)
     #       scores: list:len(bz){(post_NMS_boxes_per_image)}   ( the score for the top class for the regressed box)
     #       labels: list:len(bz){(post_NMS_boxes_per_image)}   (top class of each regressed box)
+
     def postprocess_detections(self, class_logits, box_regression, proposals, conf_thresh=0.5, keep_num_preNMS=500, keep_num_postNMS=50):
 
         return boxes, scores, labels
 
 
+    # Compute the loss of the classifier
+    # Input:
+    #      p_out:     (positives_on_mini_batch)  (output of the classifier for sampled anchors with positive gt labels)
+    #      n_out:     (negatives_on_mini_batch) (output of the classifier for sampled anchors with negative gt labels
+    def loss_class(self,p_out,n_out,p_out_gt):
+
+        # TODO compute classifier's loss
+        # p_out_gt = torch.ones(len(p_out),1)
+        n_out_gt = torch.zeros(len(n_out)).to(self.device)
+        CE_loss = nn.CrossEntropyLoss()
+
+        loss_p = CE_loss(p_out,p_out_gt.long())*len(p_out_gt)
+        loss_n = CE_loss(n_out,n_out_gt.long())*len(n_out_gt)
+
+        loss = (loss_p + loss_n) / (len(p_out_gt) + len(n_out_gt))
+
+        return loss
+
+
+
+    # Compute the loss of the regressor
+    # Input:
+    #       pos_target_coord: (positive_on_mini_batch,4) (ground truth of the regressor for sampled anchors with positive gt labels)
+    #       pos_out_r: (positive_on_mini_batch,4)        (output of the regressor for sampled anchors with positive gt labels)
+    def loss_reg(self,pos_target_coord,pos_out_r,positive_gt_label, effective_batch=120):
+            #torch.nn.SmoothL1Loss()
+            # TODO compute regressor's loss
+            # TODO can be vectorized
+            SmoothL1Loss = nn.SmoothL1Loss(reduction='sum')
+            loss = 0
+            for i in range(len(pos_target_coord)):
+                c_idx = positive_gt_label[i].int() -1
+                loss_temp = SmoothL1Loss(pos_out_r[i][c_idx*4:c_idx*4+4],pos_target_coord[i])
+                loss += loss_temp
+            print('effective batch',effective_batch)
+            loss /=   effective_batch
+
+            return loss
 
 
     # Compute the total loss of the classifier and the regressor
@@ -200,6 +240,70 @@ class BoxHead(torch.nn.Module):
     #      loss_class: scalar
     #      loss_regr: scalar
     def compute_loss(self,class_logits, box_preds, labels, regression_targets,l=1,effective_batch=150):
+
+        #testing data
+        # loss_data = torch.load('./Test_Cases/Loss/loss_test6.pt')
+        # random_permutation_background = loss_data.get('random_permutation_background')
+        # random_permutation_foreground = loss_data.get('random_permutation_foreground')
+        # loss_reg = loss_data.get('loss_reg')
+        # loss_clas = loss_data.get('loss_clas')
+
+        # Pick max(M/2,available positive ground truth anchors)
+        positive_gt_anchor_idx = torch.where(labels != 0) # all proposals that are not background are positive
+        negative_gt_anchor_idx = torch.where(labels == 0) # Only background proposals are negtive
+
+
+
+        num_pos_anchor = int(min(effective_batch *0.5, len(positive_gt_anchor_idx[0]))) # 0.75 used for 3:1 ratio
+        num_neg_anchor = effective_batch - num_pos_anchor
+
+        # create random index for pos and negative gt anchor, and pick corresponding # of idx
+        pos_rand_idx = torch.randperm(len(positive_gt_anchor_idx[0]))[:num_pos_anchor]
+        neg_rand_idx = torch.randperm(len(negative_gt_anchor_idx[0]))[:num_neg_anchor]
+
+        p_classifier_out = class_logits[positive_gt_anchor_idx]  # shape: (num_pos_anchor,C+1)
+        p_classifier_out = p_classifier_out[pos_rand_idx]
+        n_classifier_out = class_logits[negative_gt_anchor_idx]  # shape: (effective_batch - num_pos_anchor,C+1)
+        n_classifier_out = n_classifier_out[neg_rand_idx]
+
+        p_regressor_gt = regression_targets[positive_gt_anchor_idx[0]]  # shape: (num_pos_anchor,4)
+        p_regressor_gt = p_regressor_gt[pos_rand_idx]
+        p_regressor_pred = box_preds[positive_gt_anchor_idx[0]]  # shape: (num_pos_anchor,4*C)
+        p_regressor_pred = p_regressor_pred[pos_rand_idx]
+
+        positive_gt_label = labels[positive_gt_anchor_idx]  # stores all positive labels
+        positive_gt_label = positive_gt_label[pos_rand_idx] #corresponding labels for each proposal
+
+        # print('random_permutation_background', random_permutation_background)
+        # print('random_permutation_foreground', random_permutation_foreground)
+        # print('p_idx',pos_rand_idx)
+        # print('n_idx',neg_rand_idx)
+
+        #using test data:
+        # foreground_ind = (labels > 0).nonzero()
+        # background_ind = (labels ==0).nonzero()
+        # foreground_target = regression_targets[foreground_ind[random_permutation_foreground]].squeeze()
+        # foreground_prediction = box_preds[foreground_ind[random_permutation_foreground]].squeeze()
+        # foreground_label = labels[foreground_ind[random_permutation_foreground]].squeeze()
+        # effective_batch = loss_data.get('effective_batch')
+
+
+        # loss_class = self.loss_class(class_logits[foreground_ind[random_permutation_foreground]].squeeze().to(self.device), class_logits[background_ind[random_permutation_background]].squeeze().to(self.device), \
+        #                              foreground_label.to(self.device))
+        # loss_regr  =  self.loss_reg(foreground_target.to(self.device), foreground_prediction.to(self.device), \
+        #                             foreground_label.to(self.device),effective_batch=effective_batch)
+        #
+        # print('calculated class',loss_class)
+        # print('calculated regr', loss_regr)
+        # print('gt_loss_clas', loss_clas)
+        # print('gt_loss_reg', loss_reg)
+
+
+        loss_class = self.loss_class(p_classifier_out.to(self.device), n_classifier_out.to(self.device),positive_gt_label.to(self.device))
+        loss_regr  =  self.loss_reg(p_regressor_gt.to(self.device), p_regressor_pred.to(self.device),positive_gt_label.to(self.device),effective_batch=effective_batch)
+
+        l = 10 # randomly set to 10
+        loss = loss_class + l*loss_regr
 
         return loss, loss_class, loss_regr
 
