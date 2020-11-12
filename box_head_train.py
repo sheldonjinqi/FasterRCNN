@@ -9,38 +9,12 @@ import pdb
 import copy
 
 from BoxHead import *
+from pretrained_models import *
 # from pretrained_models import *
 import os
 import time
 import torch.optim as optim
 from torchvision.models.detection.image_list import ImageList
-
-
-def pretrained_models_680(checkpoint_file,eval=True):
-    import torchvision
-    model = torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=False)
-
-    if(eval):
-        model.eval()
-
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    model.to(device)
-
-    backbone = model.backbone
-    rpn = model.rpn
-
-    if(eval):
-        backbone.eval()
-        rpn.eval()
-
-    rpn.nms_thresh=0.6
-    checkpoint = torch.load(checkpoint_file)
-
-    backbone.load_state_dict(checkpoint['backbone'])
-    rpn.load_state_dict(checkpoint['rpn'])
-
-    return backbone, rpn
-
 
 def load_data(batch_size=2):
     '''
@@ -95,6 +69,7 @@ def box_train(box_head, train_loader,optimizer,epoch,backbone,rpn,keep_topK):
 
         optimizer.zero_grad()
         # images, labels, mask, boxes, indexes = [data[key] for key in data.keys()]
+        # images = images.to(device)
         images = data['images'].to(device)
         indexes = data['index']
         boxes = data['bbox']
@@ -112,12 +87,13 @@ def box_train(box_head, train_loader,optimizer,epoch,backbone,rpn,keep_topK):
         proposals=[proposal[0:keep_topK,:] for proposal in rpnout[0]]
         # A list of features produces by the backbone's FPN levels: list:len(FPN){(bz,256,H_feat,W_feat)}
         fpn_feat_list= list(backout.values())
+        # fpn_feat_list =  [item.to('cpu') for item in fpn_feat_list]
 
         gt_labels, gt_regressor_target = box_head.create_ground_truth(proposals,labels,boxes)
 
         #TOdo check this line
 
-        proposals_roi = copy.deepcopy(proposals)
+        # proposals_roi = copy.deepcopy(proposals)
         roi_align_result = box_head.MultiScaleRoiAlign(fpn_feat_list,proposals) #This is the input to Box head
         clas_out, regr_out = box_head.forward(roi_align_result.to(device))
 
@@ -139,17 +115,17 @@ def box_train(box_head, train_loader,optimizer,epoch,backbone,rpn,keep_topK):
         loss.backward()
         optimizer.step()
 
-        epoch_loss += loss.item()
-        epoch_clas_loss += loss_c.item()
+        epoch_loss += loss#.item()
+        epoch_clas_loss += loss_c#.item()
         epoch_regr_loss += loss_r
-        running_loss += loss.item()
-        running_clas_loss += loss_c.item()
+        running_loss += loss#.item()
+        running_clas_loss += loss_c#.item()
         running_regr_loss += loss_r
 
         #print results every log_iter batch:
-        log_iter = 25
+        log_iter = 100
         if i % log_iter == (log_iter-1):  # print every 100 mini-batches
-            print('[%d, %5d] total_loss: %.5f focal_loss: %.5f  dice_loss: %.5f' %
+            print('[%d, %5d] total_loss: %.5f clas_loss: %.5f  regr_loss: %.5f' %
                   (epoch + 1, i + 1,
                   running_loss / log_iter,
                   running_clas_loss / log_iter,
@@ -164,10 +140,10 @@ def box_train(box_head, train_loader,optimizer,epoch,backbone,rpn,keep_topK):
 
         #delete variables after usage to free GPU ram, double check if these variables are needed for future!!!!!!!
         # del loss ,loss_c , loss_r
-        # del imgs, label_list, mask_list, bbox_list, indexes
+        # del images, labels, mask, boxes, indexes
         # del clas_out, regr_out
-        # del target_clas, target_regr
-        torch.cuda.empty_cache()
+        # del gt_labels, gt_regressor_target
+        # torch.cuda.empty_cache()
 
 
     epoch_loss /= i
@@ -226,7 +202,7 @@ def main():
     print('data loaded')
 
     # Here we keep the top 20, but during training you should keep around 200 boxes from the 1000 proposals
-    keep_topK= 20
+    keep_topK= 200
 
     box_head = BoxHead().to(device)
 

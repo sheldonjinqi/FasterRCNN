@@ -45,9 +45,10 @@ class BoxHead(torch.nn.Module):
             total_proposals += len(proposals[i])
             labels_tmp = torch.zeros(len(proposals[i]),1)
             regressor_target_tmp = torch.zeros(len(proposals[i]),4)
+            proposals_single = proposals[i].to('cpu')
             for j in range(len(proposals[i])):
-                proposal = proposals[i][j]
-                iou = IOU(bbox[i].to(self.device),proposal.to(self.device))
+                proposal = proposals_single[j]
+                iou = IOU(bbox[i],proposal)
                 iou_idx = (iou > 0.5).nonzero()
                 #if has iou > 0.5 with more than one gt box
                 # Todo check the max here
@@ -73,10 +74,10 @@ class BoxHead(torch.nn.Module):
         y_gt = 0.5 * (y1+y2)
         w_gt = abs(x1-x2)
         h_gt = abs(y1-y2)
-        xp = 0.5*(torch.cat([x1[:,0] for x1 in proposals]) + torch.cat([x1[:,2] for x1 in proposals])).to(self.device)
-        yp = 0.5*(torch.cat([x1[:,1] for x1 in proposals]) + torch.cat([x1[:,3] for x1 in proposals])).to(self.device)
-        wp = torch.abs(torch.cat([x1[:,0] for x1 in proposals]) - torch.cat([x1[:,2] for x1 in proposals])).to(self.device)
-        hp = torch.abs((torch.cat([x1[:,1] for x1 in proposals]) - torch.cat([x1[:,3] for x1 in proposals]))).to(self.device)
+        xp = 0.5*(torch.cat([x1[:,0] for x1 in proposals]) + torch.cat([x1[:,2] for x1 in proposals]))
+        yp = 0.5*(torch.cat([x1[:,1] for x1 in proposals]) + torch.cat([x1[:,3] for x1 in proposals]))
+        wp = torch.abs(torch.cat([x1[:,0] for x1 in proposals]) - torch.cat([x1[:,2] for x1 in proposals]))
+        hp = torch.abs((torch.cat([x1[:,1] for x1 in proposals]) - torch.cat([x1[:,3] for x1 in proposals])))
 
         tx = (x_gt-xp)/wp
         ty = (y_gt-yp)/hp
@@ -97,42 +98,42 @@ class BoxHead(torch.nn.Module):
     #      P: scalar
     # Output:
     #      feature_vectors: (total_proposals, 256*P*P)  (make sure the ordering of the proposals are the same as the ground truth creation)
-    # def MultiScaleRoiAlign(self, fpn_feat_list,proposals,P=7):
-    #     #####################################
-    #     # Here you can use torchvision.ops.RoIAlign check the docs
-    #     #####################################
-    #
-    #     #using for loop first, try vectorizing to speed up
-    #     feature_vectors = []
-    #     scale_list = [[] for i in range(len(fpn_feat_list))] #len(FPN), each sublist contains all proposasls in that scale
-    #     total_proposals = 0
-    #     for proposal in proposals:
-    #         x1,y1,x2,y2 = proposal.T
-    #         p_width = np.abs(x1-x2)
-    #         p_height =np.abs(y1-y2)
-    #         fpn_idx = (4+np.log2(np.sqrt(p_width*p_height)/224)).floor().clamp(min=2,max=5) #k-values are clipped to [2,5] according to piazza
-    #         fpn_idx -= 2
-    #         for i in range(len(fpn_feat_list)):
-    #             matched_proposals = proposal[fpn_idx == i]
-    #             # convert proposal box from img coord to featuremap coord
-    #             # matched_proposals *= fpn_feat_list[i].shape[-1]/ 1088
-    #             matched_proposals[:, (0,2)] *= fpn_feat_list[i].shape[-1] / 1088 # rescaling the x-coords
-    #             matched_proposals[:, (1,3)] *= fpn_feat_list[i].shape[-2] / 800 # rescaling the y-coords
-    #             scale_list[i].append(matched_proposals)
-    #
-    #         total_proposals += len(proposal)
-    #
-    #     for i in range(len(fpn_feat_list)):
-    #         featmap = fpn_feat_list[i]
-    #         #convert proposal box from img coord to featuremap coord
-    #         proposals_fp = scale_list[i]  #list:len(bz){per_image_proposals,4}
-    #         aligned_featmap = ops.roi_align(featmap,boxes=proposals_fp,output_size=P) #shape: (total_proposals in one feature level,256,P,P)
-    #         feature_vectors_tmp = torch.flatten(aligned_featmap, -3, -1)  # shape: (total_proposals in one feature level,256*P^2)
-    #         feature_vectors.append(feature_vectors_tmp)
-    #     feature_vectors = torch.cat(feature_vectors,dim=0)  # shape: (total_proposals,256*P^2)
-    #     assert feature_vectors.shape[0] == total_proposals
-    #
-    #     return feature_vectors
+    def MultiScaleRoiAlign(self, fpn_feat_list,proposals,P=7):
+        #####################################
+        # Here you can use torchvision.ops.RoIAlign check the docs
+        #####################################
+
+        proposals = torch.cat(proposals)
+        total_proposals = len(proposals)
+        x1,y1,x2,y2 = proposals.T
+        p_width = torch.abs(x1-x2)
+        p_height = torch.abs(y1-y2)
+        fpn_idx = (4+torch.log2(torch.sqrt(p_width*p_height)/224)).floor().clamp(min=2,max=5) #k-values are clipped to [2,5] according to piazza
+        fpn_idx -= 2
+
+        feature_vectors = torch.zeros((len(proposals),256*P*P)).to(self.device)
+        for i in range(len(fpn_feat_list)):
+
+            matched_proposals_idx = torch.where(fpn_idx == i)
+            img_id = matched_proposals_idx[0] // 200
+            matched_proposals = proposals[matched_proposals_idx]
+            matched_proposals = torch.cat((img_id.unsqueeze(dim=1),matched_proposals),dim=1)
+            # convert proposal box from img coord to featuremap coord
+            # matched_proposals *= fpn_feat_list[i].shape[-1]/ 1088
+
+            matched_proposals[:, (1,3)] *= fpn_feat_list[i].shape[-1] / 1088 # rescaling the x-coords
+            matched_proposals[:, (2,4)] *= fpn_feat_list[i].shape[-2] / 800 # rescaling the y-coords
+
+
+            aligned_box = ops.roi_align(fpn_feat_list[i],boxes=matched_proposals,output_size=P) #shape: #proposals in feature level i, 256*p*p
+            aligned_box = torch.flatten(aligned_box, -3, -1)
+            feature_vectors[matched_proposals_idx] = aligned_box.to(self.device) #
+
+
+
+        assert feature_vectors.shape[0] == total_proposals
+
+        return feature_vectors
 
     # This function for each proposal finds the appropriate feature map to sample and using RoIAlign it samples
     # a (256,P,P) feature map. This feature map is then flattened into a (256*P*P) vector
@@ -143,36 +144,40 @@ class BoxHead(torch.nn.Module):
     # Output:
     #      feature_vectors: (total_proposals, 256*P*P)  (make sure the ordering of the proposals are the same as the ground truth creation)
     #loop through one by one
-    def MultiScaleRoiAlign(self, fpn_feat_list,proposals,P=7):
-        #####################################
-        # Here you can use torchvision.ops.RoIAlign check the docs
-        #####################################
-
-        #using for loop first, try vectorizing to speed up
-        feature_vectors = []
-        scale_list = [[] for i in range(len(fpn_feat_list))] #len(FPN), each sublist contains all proposasls in that scale
-        total_proposals = 0
-        for i in range(len(proposals)):
-            for box in proposals[i]:
-                x1,y1,x2,y2 = box
-                p_width = torch.abs(x1 - x2)
-                p_height = torch.abs(y1 - y2)
-                k = (4 + torch.log2(torch.sqrt(p_width * p_height) / 224)).floor().clamp(min=2,
-                                                                                         max=5).int()  # k-values are clipped to [2,5] according to piazza
-                k -= 2
-                x1 *= fpn_feat_list[k].shape[-1] / 1088
-                x2 *= fpn_feat_list[k].shape[-1] / 1088
-                y1 *= fpn_feat_list[k].shape[-2] / 800
-                y2 *= fpn_feat_list[k].shape[-2] / 800
-
-                # proposal_box = [torch.tensor([[x1,y1,x2,y2]])]
-                proposal_box = torch.tensor([[i,x1,y1,x2,y2]]).to(self.device)
-                aligned_box = ops.roi_align(fpn_feat_list[k],boxes=proposal_box,output_size=P)
-                feature_vectors.append(aligned_box)
-        feature_vectors = torch.cat(feature_vectors,dim=0)  # shape: (total_proposals,256*P^2)
-        feature_vectors = torch.flatten(feature_vectors, -3, -1)
-
-        return feature_vectors
+    # def MultiScaleRoiAlign(self, fpn_feat_list,proposals,P=7):
+    #     #####################################
+    #     # Here you can use torchvision.ops.RoIAlign check the docs
+    #     #####################################
+    #     #using for loop first, try vectorizing to speed up
+    #     feature_vectors = []
+    #     scale_list = [[] for i in range(len(fpn_feat_list))] #len(FPN), each sublist contains all proposasls in that scale
+    #     total_proposals = 0
+    #     for i in range(len(proposals)):
+    #         for box in proposals[i]:
+    #             x1,y1,x2,y2 = box
+    #             p_width = torch.abs(x1 - x2)
+    #             p_height = torch.abs(y1 - y2)
+    #             k = (4 + torch.log2(torch.sqrt(p_width * p_height) / 224)).floor().clamp(min=2,
+    #                                                                                      max=5).int()  # k-values are clipped to [2,5] according to piazza
+    #
+    #             k -= 2
+    #
+    #             x1 *= fpn_feat_list[k].shape[-1] / 1088
+    #             x2 *= fpn_feat_list[k].shape[-1] / 1088
+    #             y1 *= fpn_feat_list[k].shape[-2] / 800
+    #             y2 *= fpn_feat_list[k].shape[-2] / 800
+    #
+    #             # proposal_box = [torch.tensor([[x1,y1,x2,y2]])]
+    #             proposal_box = torch.tensor([[i,x1,y1,x2,y2]])
+    #             print(k)
+    #             print(proposal_box)
+    #             exit()
+    #             aligned_box = ops.roi_align(fpn_feat_list[k],boxes=proposal_box,output_size=P)
+    #             feature_vectors.append(aligned_box)
+    #     feature_vectors = torch.cat(feature_vectors,dim=0)  # shape: (total_proposals,256*P^2)
+    #     feature_vectors = torch.flatten(feature_vectors, -3, -1)
+    #
+    #     return feature_vectors
 
     # This function does the post processing for the results of the Box Head for a batch of images
     # Use the proposals to distinguish the outputs from each image
