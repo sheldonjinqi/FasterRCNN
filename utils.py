@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from functools import partial
+
 def MultiApply(func, *args, **kwargs):
     pfunc = partial(func, **kwargs) if kwargs else func
     map_results = map(pfunc, *args)
@@ -20,11 +21,15 @@ def IOU(boxA, boxB):
 
     if len(boxA.size()) == 3:
         center_xs, center_ys, ws, hs = boxA[:, :, 0], boxA[:, :, 1], boxA[:, :, 2], boxA[:, :, 3]
+        lefts = center_xs - ws / 2
+        rights = center_xs + ws / 2
+        uppers = center_ys - hs / 2
+        bottoms = center_ys + hs / 2
+
     else:
         lefts, uppers, rights, bottoms = boxA.T
-
-    ws = abs(rights-lefts)
-    hs = abs(uppers-bottoms)
+        ws = abs(rights-lefts)
+        hs = abs(uppers-bottoms)
     target_left, target_upper, target_right, target_bottom = boxB.T
 
     areas1 = ws * hs  # torch.size(grid_size[0], grid_size[1])
@@ -91,6 +96,23 @@ def iou_entire(proposal, bbox):
 # Output:
 #       box: (total_proposals,4) ([x1,y1,x2,y2] format)
 
-def output_decodingd(regressed_boxes_t,flatten_proposals, device='cpu'):
-    
+#TODO complete this function
+# regressed box is in tx, ty, tw, th
+# proposals are in x1,y1,x2,y2
+def output_decoding(regressed_boxes_t,flatten_proposals, device='cpu'):
+    x_p = 0.5*(flatten_proposals[:,0]+flatten_proposals[:,2])
+    y_p = 0.5*(flatten_proposals[:,1]+flatten_proposals[:,3])
+    w_p = torch.abs(flatten_proposals[:,2] - flatten_proposals[:,0])
+    h_p = torch.abs(flatten_proposals[:,3] - flatten_proposals[:,1])
+    x = regressed_boxes_t[:,0] * w_p + x_p
+    y = regressed_boxes_t[:,1] * h_p + y_p
+    w = torch.exp(regressed_boxes_t[:,2]) * w_p
+    h = torch.exp(regressed_boxes_t[:,3]) * h_p
+
+    box = torch.zeros_like(flatten_proposals)
+    box[:, 0] = x - w * 0.5
+    box[:, 1] = y - h * 0.5
+    box[:, 2] = w
+    box[:, 3] = h
+
     return box
