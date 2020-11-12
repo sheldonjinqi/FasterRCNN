@@ -19,7 +19,7 @@ box_head = BoxHead()
 #
 #     labels, regressor_target = box_head.create_ground_truth(proposals,gt_labels,bbox)
 #
-#     labels_check = torch.sum(test_labels-labels)
+#     labels_check = torch.sum(test_labels-labels.to('cpu'))
 #     # print(bbox[1])
 #     # print(proposals[1][13])
 #     # print(type(IOU(bbox[1],proposals[1][13])))
@@ -27,7 +27,7 @@ box_head = BoxHead()
 #     # print('labels:\n',torch.where(labels != 0 ))
 #     #only checks the proposal boxes that are not assigned to background according to README
 #     regressor_check = torch.sum(test_regressor_target[torch.where(test_labels != 0 )[0]] - \
-#                                 regressor_target[torch.where(labels != 0 )[0]])
+#                                 regressor_target[torch.where(labels != 0 )[0]].to('cpu'))
 #
 #     print('labels_check:',labels_check)
 #     print('regressor_check',regressor_check)
@@ -53,6 +53,7 @@ for i in range(7):
     p_loss = box_head.compute_loss(clas_logits,box_preds,labels,regression_targets,l=1,effective_batch=effective_batch)
     # print('random_permutation_background',random_permutation_background.shape)
     # print('random_permutation_foreground',random_permutation_foreground.shape)
+    # print('num of object proposals', len(random_permutation_foreground))
     print('calculated loss',p_loss)
     print('loss_sum', loss_reg+loss_clas)
     print('loss_reg',loss_reg)

@@ -47,7 +47,7 @@ class BoxHead(torch.nn.Module):
             regressor_target_tmp = torch.zeros(len(proposals[i]),4)
             for j in range(len(proposals[i])):
                 proposal = proposals[i][j]
-                iou = IOU(bbox[i],proposal)
+                iou = IOU(bbox[i].to(self.device),proposal.to(self.device))
                 iou_idx = (iou > 0.5).nonzero()
                 #if has iou > 0.5 with more than one gt box
                 if len(iou_idx) > 1 :
@@ -60,17 +60,17 @@ class BoxHead(torch.nn.Module):
             labels.extend(labels_tmp)
             regressor_target.extend(regressor_target_tmp)
         labels = torch.stack(labels)
-        regressor_target = torch.stack(regressor_target)
+        regressor_target = torch.stack(regressor_target).to(self.device)
 
         x1,y1,x2,y2 = regressor_target.T
         x_gt = 0.5 * (x1+x2)
         y_gt = 0.5 * (y1+y2)
         w_gt = abs(x1-x2)
         h_gt = abs(y1-y2)
-        xp = 0.5*(torch.cat([x1[:,0] for x1 in proposals]) + torch.cat([x1[:,2] for x1 in proposals]))
-        yp = 0.5*(torch.cat([x1[:,1] for x1 in proposals]) + torch.cat([x1[:,3] for x1 in proposals]))
-        wp = torch.abs(torch.cat([x1[:,0] for x1 in proposals]) - torch.cat([x1[:,2] for x1 in proposals]))
-        hp = torch.abs((torch.cat([x1[:,1] for x1 in proposals]) - torch.cat([x1[:,3] for x1 in proposals])))
+        xp = 0.5*(torch.cat([x1[:,0] for x1 in proposals]) + torch.cat([x1[:,2] for x1 in proposals])).to(self.device)
+        yp = 0.5*(torch.cat([x1[:,1] for x1 in proposals]) + torch.cat([x1[:,3] for x1 in proposals])).to(self.device)
+        wp = torch.abs(torch.cat([x1[:,0] for x1 in proposals]) - torch.cat([x1[:,2] for x1 in proposals])).to(self.device)
+        hp = torch.abs((torch.cat([x1[:,1] for x1 in proposals]) - torch.cat([x1[:,3] for x1 in proposals]))).to(self.device)
 
         tx = (x_gt-xp)/wp
         ty = (y_gt-yp)/hp
@@ -221,7 +221,7 @@ class BoxHead(torch.nn.Module):
                 c_idx = positive_gt_label[i].int() -1
                 loss_temp = SmoothL1Loss(pos_out_r[i][c_idx*4:c_idx*4+4],pos_target_coord[i])
                 loss += loss_temp
-            print('effective batch',effective_batch)
+            # print('effective batch',effective_batch)
             loss /=   effective_batch
 
             return loss
@@ -254,7 +254,8 @@ class BoxHead(torch.nn.Module):
 
 
 
-        num_pos_anchor = int(min(effective_batch *0.5, len(positive_gt_anchor_idx[0]))) # 0.75 used for 3:1 ratio
+        num_pos_anchor = int(min(effective_batch *0.75, len(positive_gt_anchor_idx[0]))) # 0.75 used for 3:1 ratio
+        # print('num of object proposal from my code', num_pos_anchor)
         num_neg_anchor = effective_batch - num_pos_anchor
 
         # create random index for pos and negative gt anchor, and pick corresponding # of idx
@@ -302,7 +303,7 @@ class BoxHead(torch.nn.Module):
         loss_class = self.loss_class(p_classifier_out.to(self.device), n_classifier_out.to(self.device),positive_gt_label.to(self.device))
         loss_regr  =  self.loss_reg(p_regressor_gt.to(self.device), p_regressor_pred.to(self.device),positive_gt_label.to(self.device),effective_batch=effective_batch)
 
-        l = 10 # randomly set to 10
+        l = 1 # randomly set to 10
         loss = loss_class + l*loss_regr
 
         return loss, loss_class, loss_regr

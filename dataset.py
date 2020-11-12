@@ -4,10 +4,9 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
 import h5py
 import numpy as np
+from utils import *
 import matplotlib.pyplot as plt
 from rpn import *
-from BoxHead import *
-from utils import *
 import matplotlib.patches as patches
 
 
@@ -218,7 +217,6 @@ if __name__ == '__main__':
 
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
     rpn_net = RPNHead()
-    box_head = BoxHead()
     # push the randomized training data into the dataloader
     batch_size = 1
     train_build_loader = BuildDataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
@@ -275,59 +273,9 @@ if __name__ == '__main__':
         images = batch['images'][0]
         indexes = batch['index']
         boxes = batch['bbox']
-        labels = batch['labels']
 
         if function == 'plot gt':
             gt, ground_coord = rpn_net.create_batch_truth(boxes, indexes, images[0].shape[-2:])
-            proposals = rpn_net.forward(images)
-            gt_labels, gt_regressor_target = box_head.create_ground_truth(proposals,labels,boxes)
-            decoded_gt_box = output_decoding(flatten_coord, flatten_anchors)
-
-            obj_idx = torch.where(gt_labels != 0)
-            #visualizing the ground truth box
-            color_list = ["jet", "ocean", "Spectral"]
-            images = transforms.functional.normalize(images,
-                                                     [-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225],
-                                                     [1 / 0.229, 1 / 0.224, 1 / 0.225], inplace=False)
-            fig, ax = plt.subplots(1, 1)
-            ax.imshow(images.permute(1, 2, 0))
-            #visualizing the ground truth box in one img
-            for i in range(len(labels)):
-                class_label = labels[i]
-                box = boxes[i]
-                gt_box = paths.Rectangle(box[0],box[1],box[2]-box[0],box[3]-box[1], fill=False, color = color_list[class_label-1])
-                ax.add_patch(gt_box)
-                plt.show()
-            #visualizing proposals for each class
-            for i in range(3):
-                fig, ax = plt.subplots(1,1)
-                ax.imshow(images.permute(1,2,0))
-                class_idx = torch.where(gt_labels==i+1)
-                class_box = decoded_gt_box[class_idx]
-                for box in class_box:
-                    proposal_box = paths.Rectangle(box[0],box[1],box[2],box[3], fill = False, color = color_list[i])
-                    ax.add_patch(proposal_box)
-                plt.show()
-            # for idx in obj_idx:
-            #     obj_proposal = proposals[idx]
-            #     obj_gt_label = gt_labels[idx]
-            #     obj_gt_box = decoded_gt_box[idx]
-            #
-            #     gt_rect = paths.Rectangle(obj_gt_box[0],obj_gt_box[1],obj_gt_box[2],obj_gt_box[3], \
-            #                               fill = False, color = 'r')
-            #     proposal_rect = paths.Rectangle(obj_proposal[0],obj_proposal[1],obj_proposal[2]-obj_proposal[0], \
-            #                                     obj_proposal[3]-obj_proposal[1], \
-            #                                     fill = False, color = color_list[obj_gt_box])
-            #     ax.add_patch(gt_rect)
-            #     ax.add_patch(proposal_rect)
-            #
-            #
-            # # plt.savefig("./testfig/groundtruth_" + str(i) + ".png")
-            # plt.show()
-
-            if (i > 8):
-                break
-
 
             # Flatten the ground truth and the anchors
             flatten_coord, flatten_gt, flatten_anchors = output_flattening(ground_coord, gt, rpn_net.get_anchors())
