@@ -62,6 +62,8 @@ if __name__ == '__main__':
     print("batch size:", batch_size)
     test_build_loader = BuildDataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
     test_loader = test_build_loader.loader()
+    train_build_loader = BuildDataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+    train_loader = train_build_loader.loader()
 
 
     # Here we keep the top 20, but during training you should keep around 200 boxes from the 1000 proposals
@@ -131,7 +133,7 @@ if __name__ == '__main__':
                     ax.set_title('Proposal box for class: '+str(j+1))
                     obj_idx = torch.where(gt_labels == j+1)
                     proposal_box = proposal[obj_idx[0]]
-                    print('proposal_box',proposal_box)
+                    # print('proposal_box',proposal_box)
                     for box in proposal_box:
                         box = box.view(-1)
                         rect = patches.Rectangle((box[0], box[1]), (box[2] - box[0]), (box[3] - box[1]), fill=False, color=color_list[j])
@@ -145,6 +147,6 @@ if __name__ == '__main__':
                 #     rect=patches.Rectangle((box[0],box[1]),box[2]-box[0],box[3]-box[1],fill=False,color='b')
                 #     ax.add_patch(rect)
                 # plt.show()
-            if iter ==4:
+            if iter ==0:
                 break
 

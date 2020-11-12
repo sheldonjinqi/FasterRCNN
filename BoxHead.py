@@ -21,7 +21,7 @@ class BoxHead(torch.nn.Module):
         )
         self.classfier_head = nn.Sequential(
             nn.Linear(1024,self.C+1),
-            nn.Softmax()
+            # nn.Softmax() #softmax function included in Pytorch CELOSS function
         )
 
 
@@ -54,6 +54,9 @@ class BoxHead(torch.nn.Module):
                     iou_idx = (iou > 0.99* iou.max()).nonzero()
                 elif len(iou_idx) == 0:
                     continue
+                print('shape 1', labels_tmp.shape)
+                print('shape 2', gt_labels[i][iou_idx].shape)
+                print('shape 3', len(gt_labels))
                 labels_tmp[j] = gt_labels[i][iou_idx]
                 regressor_target_tmp[j] = bbox[i][iou_idx]
             # print(labels_tmp)
@@ -149,9 +152,9 @@ class BoxHead(torch.nn.Module):
         for i in range(len(proposals)):
             for box in proposals[i]:
                 x1,y1,x2,y2 = box
-                p_width = np.abs(x1 - x2)
-                p_height = np.abs(y1 - y2)
-                k = (4 + np.log2(np.sqrt(p_width * p_height) / 224)).floor().clamp(min=2,
+                p_width = torch.abs(x1 - x2)
+                p_height = torch.abs(y1 - y2)
+                k = (4 + torch.log2(torch.sqrt(p_width * p_height) / 224)).floor().clamp(min=2,
                                                                                          max=5).int()  # k-values are clipped to [2,5] according to piazza
                 k -= 2
                 x1 *= fpn_feat_list[k].shape[-1] / 1088
@@ -160,7 +163,7 @@ class BoxHead(torch.nn.Module):
                 y2 *= fpn_feat_list[k].shape[-2] / 800
 
                 # proposal_box = [torch.tensor([[x1,y1,x2,y2]])]
-                proposal_box = torch.tensor([[i,x1,y1,x2,y2]])
+                proposal_box = torch.tensor([[i,x1,y1,x2,y2]]).to(self.device)
                 aligned_box = ops.roi_align(fpn_feat_list[k],boxes=proposal_box,output_size=P)
                 feature_vectors.append(aligned_box)
         feature_vectors = torch.cat(feature_vectors,dim=0)  # shape: (total_proposals,256*P^2)
@@ -262,9 +265,9 @@ class BoxHead(torch.nn.Module):
         pos_rand_idx = torch.randperm(len(positive_gt_anchor_idx[0]))[:num_pos_anchor]
         neg_rand_idx = torch.randperm(len(negative_gt_anchor_idx[0]))[:num_neg_anchor]
 
-        p_classifier_out = class_logits[positive_gt_anchor_idx]  # shape: (num_pos_anchor,C+1)
+        p_classifier_out = class_logits[positive_gt_anchor_idx[0]]  # shape: (num_pos_anchor,C+1)
         p_classifier_out = p_classifier_out[pos_rand_idx]
-        n_classifier_out = class_logits[negative_gt_anchor_idx]  # shape: (effective_batch - num_pos_anchor,C+1)
+        n_classifier_out = class_logits[negative_gt_anchor_idx[0]]  # shape: (effective_batch - num_pos_anchor,C+1)
         n_classifier_out = n_classifier_out[neg_rand_idx]
 
         p_regressor_gt = regression_targets[positive_gt_anchor_idx[0]]  # shape: (num_pos_anchor,4)
