@@ -50,13 +50,16 @@ class BoxHead(torch.nn.Module):
                 iou = IOU(bbox[i].to(self.device),proposal.to(self.device))
                 iou_idx = (iou > 0.5).nonzero()
                 #if has iou > 0.5 with more than one gt box
+                # Todo check the max here
                 if len(iou_idx) > 1 :
-                    iou_idx = (iou > 0.99* iou.max()).nonzero()
+                    iou_idx = (iou > 0.999* iou.max()).nonzero()
                 elif len(iou_idx) == 0:
                     continue
-                print('shape 1', labels_tmp.shape)
-                print('shape 2', gt_labels[i][iou_idx].shape)
-                print('shape 3', len(gt_labels))
+
+                # print('shape 1', labels_tmp.shape)
+                # print('shape 2', gt_labels[i][iou_idx].shape)
+                # print('shape 3', len(iou_idx))
+                # print(iou[(iou > 0.999* iou.max()).nonzero()],iou.max())
                 labels_tmp[j] = gt_labels[i][iou_idx]
                 regressor_target_tmp[j] = bbox[i][iou_idx]
             # print(labels_tmp)
