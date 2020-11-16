@@ -71,7 +71,7 @@ if __name__ == '__main__':
 
     box_head = BoxHead()
     color_list = ["r", "b", "g"]
-
+    class_list = ['vehicle', 'human', 'animal']
     with torch.no_grad():
         for iter, batch in enumerate(test_loader, 0):
             images = batch['images'].to(device)
@@ -123,6 +123,7 @@ if __name__ == '__main__':
                     gt_box = patches.Rectangle((box[0], box[1]), (box[2] - box[0]), (box[3] - box[1]), fill=False,
                                              color=color_list[gt_class_label-1])
                     ax.add_patch(gt_box)
+                ax.set_title('Ground Truth Box')
                 plt.savefig('./fig/gtbox_' + str(iter))
                 plt.show()
 
@@ -130,7 +131,7 @@ if __name__ == '__main__':
                     proposal = proposals[i]
                     fig, ax = plt.subplots(1, 1)
                     ax.imshow(img_squeeze.permute(1, 2, 0))
-                    ax.set_title('Proposal box for class: '+str(j+1))
+                    ax.set_title('Proposal box for class: '+class_list[j])
                     obj_idx = torch.where(gt_labels == j+1)
                     proposal_box = proposal[obj_idx[0]]
                     # print('proposal_box',proposal_box)
@@ -147,6 +148,6 @@ if __name__ == '__main__':
                 #     rect=patches.Rectangle((box[0],box[1]),box[2]-box[0],box[3]-box[1],fill=False,color='b')
                 #     ax.add_patch(rect)
                 # plt.show()
-            if iter ==0:
+            if iter ==4:
                 break
 

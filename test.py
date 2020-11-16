@@ -7,37 +7,47 @@ box_head = BoxHead()
 
 # Test for Ground Truth
 #mis one proposal for last test case due to IOU numerical precision
-for i in range(7):
-    gt_data = torch.load('./Test_Cases/GroundTruth/ground_truth_test'+str(i)+'.pt')
-    # print(gt_data.keys())
-
-    proposals = gt_data.get('proposals')
-    proposals = [item.to('cuda') for item in proposals]
-    gt_labels = gt_data.get('gt_labels')
-    bbox = gt_data.get('bbox')
-    test_labels = gt_data.get('labels')
-    test_regressor_target = gt_data.get('regressor_target')
-
-    labels, regressor_target = box_head.create_ground_truth(proposals,gt_labels,bbox)
-
-    labels_check = torch.sum(test_labels-labels.to('cpu'))
-    # print(bbox[1])
-    # print(proposals[1][13])
-    # print(type(IOU(bbox[1],proposals[1][13])))
-    # print('test_labels:\n',torch.where(test_labels != 0 ))
-    # print('labels:\n',torch.where(labels != 0 ))
-    #only checks the proposal boxes that are not assigned to background according to README
-    regressor_check = torch.sum(test_regressor_target[torch.where(test_labels != 0 )[0]] - \
-                                regressor_target[torch.where(labels != 0 )[0]].to('cpu'))
-
-    print('labels_check:',labels_check)
-    print('regressor_check',regressor_check)
+# for i in range(7):
+#     gt_data = torch.load('./Test_Cases/GroundTruth/ground_truth_test'+str(i)+'.pt')
+#     # print(gt_data.keys())
+#
+#     proposals = gt_data.get('proposals')
+#     proposals = [item.to('cuda') for item in proposals]
+#     gt_labels = gt_data.get('gt_labels')
+#     bbox = gt_data.get('bbox')
+#     test_labels = gt_data.get('labels')
+#     test_regressor_target = gt_data.get('regressor_target')
+#
+#     labels, regressor_target = box_head.create_ground_truth(proposals,gt_labels,bbox)
+#
+#     labels_check = torch.sum(test_labels-labels.to('cpu'))
+#     # print(bbox[1])
+#     # print(proposals[1][13])
+#     # print(type(IOU(bbox[1],proposals[1][13])))
+#     # print('test_labels:\n',torch.where(test_labels != 0 ))
+#     # print('labels:\n',torch.where(labels != 0 ))
+#     #only checks the proposal boxes that are not assigned to background according to README
+#     regressor_check = torch.sum(test_regressor_target[torch.where(test_labels != 0 )[0]] - \
+#                                 regressor_target[torch.where(labels != 0 )[0]].to('cpu'))
+#
+#     print('labels_check:',labels_check)
+#     print('regressor_check',regressor_check)
 # print(test_regressor_target[torch.where(test_labels != 0 )[0]])
 # print(regressor_target[torch.where(labels != 0 )[0]])
 # print(torch.sum(test_regressor_target[torch.where(test_labels != 0 )[0]]-regressor_target[torch.where(labels != 0 )[0]]))
 # print(test_regressor_target[:10])
 # print(regressor_target[:10])
 
+
+SmoothL1Loss = nn.SmoothL1Loss(reduction='sum')
+
+a = torch.tensor([[1.,2.,3.,4.],[1.,2.,3.,4.]])
+b = torch.tensor([[5.,6.,7.,8.],[5.,6.,7.,8.]])
+
+loss = SmoothL1Loss(a,b)
+
+print(loss)
+exit()
 # Test for Loss
 for i in range(7):
     loss_data = torch.load('./Test_Cases/Loss/loss_test'+str(i)+'.pt')

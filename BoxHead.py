@@ -24,10 +24,23 @@ class BoxHead(torch.nn.Module):
             # nn.Softmax() #softmax function included in Pytorch CELOSS function
         )
 
-
         self.regressor_head = nn.Sequential(
             nn.Linear(1024, 4*self.C)
         )
+
+    #initialize fully connected layers with provided parameters
+    def _init_weights(self):
+        for layer in self.classfier_head:
+            for action in layer:
+                if action.__class__.__name__.find('Conv') != -1:
+                    nn.init.normal_(action.weight.data, mean=0.0, std=0.01)
+                    action.bias.data.zero_()
+        for layer in self.regressor_head:
+            if layer.__class__.__name__.find('Conv') != -1:
+                nn.init.normal_(layer.weight.data, mean=0.0, std=0.01)
+                layer.bias.data.zero_()
+
+
 
     #  This function assigns to each proposal either a ground truth box or the background class (we assume background class is 0)
     #  Input:
@@ -53,7 +66,7 @@ class BoxHead(torch.nn.Module):
                 #if has iou > 0.5 with more than one gt box
                 # Todo check the max here
                 if len(iou_idx) > 1 :
-                    iou_idx = (iou > 0.999* iou.max()).nonzero()
+                    iou_idx = (iou == iou.max()).nonzero()
                 elif len(iou_idx) == 0:
                     continue
 
@@ -61,6 +74,7 @@ class BoxHead(torch.nn.Module):
                 # print('shape 2', gt_labels[i][iou_idx].shape)
                 # print('shape 3', len(iou_idx))
                 # print(iou[(iou > 0.999* iou.max()).nonzero()],iou.max())
+
                 labels_tmp[j] = gt_labels[i][iou_idx]
                 regressor_target_tmp[j] = bbox[i][iou_idx]
             # print(labels_tmp)
@@ -222,10 +236,9 @@ class BoxHead(torch.nn.Module):
     # Input:
     #       pos_target_coord: (positive_on_mini_batch,4) (ground truth of the regressor for sampled anchors with positive gt labels)
     #       pos_out_r: (positive_on_mini_batch,4)        (output of the regressor for sampled anchors with positive gt labels)
-    def loss_reg(self,pos_target_coord,pos_out_r,positive_gt_label, effective_batch=120):
+    def loss_reg(self,pos_target_coord,pos_out_r,positive_gt_label, effective_batch=32):
             #torch.nn.SmoothL1Loss()
-            # TODO compute regressor's loss
-            # TODO can be vectorized
+            # TODO compute regressor's loss, not sure if using reduction =sum or default mean
             SmoothL1Loss = nn.SmoothL1Loss(reduction='sum')
             loss = 0
             for i in range(len(pos_target_coord)):
@@ -250,7 +263,7 @@ class BoxHead(torch.nn.Module):
     #      loss: scalar
     #      loss_class: scalar
     #      loss_regr: scalar
-    def compute_loss(self,class_logits, box_preds, labels, regression_targets,l=1,effective_batch=150):
+    def compute_loss(self,class_logits, box_preds, labels, regression_targets,l=1,effective_batch=32):
 
         #testing data
         # loss_data = torch.load('./Test_Cases/Loss/loss_test6.pt')
@@ -314,7 +327,6 @@ class BoxHead(torch.nn.Module):
         loss_class = self.loss_class(p_classifier_out.to(self.device), n_classifier_out.to(self.device),positive_gt_label.to(self.device))
         loss_regr  =  self.loss_reg(p_regressor_gt.to(self.device), p_regressor_pred.to(self.device),positive_gt_label.to(self.device),effective_batch=effective_batch)
 
-        l = 1 # randomly set to 10
         loss = loss_class + l*loss_regr
 
         return loss, loss_class, loss_regr
